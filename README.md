@@ -28,8 +28,12 @@ dgm 反着来：**位置人手定**（`@列,行`，CSS Grid 排版），**连线
 
 ## 安装
 
+目前从源码安装（PyPI 包尚未发布）：
+
 ```bash
-pip install dgm-diagram
+git clone https://github.com/JiaY-77/dgm
+cd dgm
+pip install -e .
 ```
 
 需要 Python 3.10+、Pillow（自动装）和本机的 Edge 或 Chrome（PNG 截图用）。
