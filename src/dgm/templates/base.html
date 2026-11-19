@@ -49,13 +49,42 @@ const EDGES = __EDGES__;
 const canvas=document.getElementById('canvas'), svg=document.getElementById('wires');
 function box(id){const el=document.getElementById(id);if(!el)return null;
   const c=canvas.getBoundingClientRect(),r=el.getBoundingClientRect();
-  return {x:r.left-c.left,y:r.top-c.top,w:r.width,h:r.height,cx:r.left-c.left+r.width/2,
+  return {id:id,x:r.left-c.left,y:r.top-c.top,w:r.width,h:r.height,cx:r.left-c.left+r.width/2,
           cy:r.top-c.top+r.height/2,r:r.left-c.left+r.width,b:r.top-c.top+r.height};}
-function anchors(a,b){const ov=Math.min(a.b,b.b)>Math.max(a.y,b.y);
-  if(b.cx>a.cx&&ov){const y=(Math.max(a.y,b.y)+Math.min(a.b,b.b))/2;return [{x:a.r,y},{x:b.x,y},'h'];}
-  if(b.cx<a.cx&&ov){const y=(Math.max(a.y,b.y)+Math.min(a.b,b.b))/2;return [{x:a.x,y},{x:b.r,y},'h'];}
-  if(b.cy>a.cy){const x=(Math.max(a.x,b.x)+Math.min(a.r,b.r))/2;return [{x,y:a.b},{x,y:b.y},'v'];}
-  const x=(Math.max(a.x,b.x)+Math.min(a.r,b.r))/2;return [{x,y:a.y},{x,y:b.b},'v'];}
+function anchors(a,b,boxes){
+  const yov=Math.min(a.b,b.b)>Math.max(a.y,b.y);   // y 范围重叠 → 可横连
+  const xov=Math.min(a.r,b.r)>Math.max(a.x,b.x);   // x 范围重叠 → 可竖连
+  if(b.cx>a.cx&&yov){const y=(Math.max(a.y,b.y)+Math.min(a.b,b.b))/2;return [{x:a.r,y},{x:b.x,y},'h'];}
+  if(b.cx<a.cx&&yov){const y=(Math.max(a.y,b.y)+Math.min(a.b,b.b))/2;return [{x:a.x,y},{x:b.r,y},'h'];}
+  if(b.cy>a.cy&&xov){const x=(Math.max(a.x,b.x)+Math.min(a.r,b.r))/2;return [{x,y:a.b},{x,y:b.y},'v'];}
+  if(b.cy<a.cy&&xov){const x=(Math.max(a.x,b.x)+Math.min(a.r,b.r))/2;return [{x,y:a.y},{x,y:b.b},'v'];}
+  // 斜对角（x/y 范围都不重叠）：锚点贴边——起点取 a 靠近 b 的那条边中点，终点同理取 b，
+  // 不用「范围中点」（两个范围不相交时中点落在卡片外的空隙里，锚点会悬空）。
+  return diagAnchors(a,b,boxes);}
+function diagAnchors(a,b,boxes){
+  const dx=b.cx-a.cx,dy=b.cy-a.cy;
+  const h=[{x:dx>=0?a.r:a.x,y:a.cy},{x:dx>=0?b.x:b.r,y:b.cy},'dh'];
+  const v=[{x:a.cx,y:dy>=0?a.b:a.y},{x:b.cx,y:dy>=0?b.y:b.b},'dv'];
+  if(!boxes||!boxes.length)return Math.abs(dx)>=Math.abs(dy)?h:v;
+  // 正交折线可能横穿夹在中间的卡片：两条候选各查一遍，哪条不穿走哪条；
+  // 都不穿（或都穿）才按主方向（|dx|、|dy| 谁大走谁）。
+  const hb=routeBlocked(h,a,b,boxes),vb=routeBlocked(v,a,b,boxes);
+  if(hb&&!vb)return v;
+  if(vb&&!hb)return h;
+  return Math.abs(dx)>=Math.abs(dy)?h:v;}
+function routeBlocked(r,a,b,boxes){
+  const p1=r[0],p2=r[1],mx=(p1.x+p2.x)/2,my=(p1.y+p2.y)/2;
+  const legs=r[2]==='dh'
+    ?[[p1.x,p1.y,mx,p1.y],[mx,p1.y,mx,p2.y],[mx,p2.y,p2.x,p2.y]]
+    :[[p1.x,p1.y,p1.x,my],[p1.x,my,p2.x,my],[p2.x,my,p2.x,p2.y]];
+  return legs.some(l=>segHitsBox(l[0],l[1],l[2],l[3],boxes,a.id,b.id));}
+function segHitsBox(x1,y1,x2,y2,boxes,skipId1,skipId2){
+  const minx=Math.min(x1,x2),maxx=Math.max(x1,x2),
+        miny=Math.min(y1,y2),maxy=Math.max(y1,y2);
+  for(const r of boxes){
+    if(r.id===skipId1||r.id===skipId2)continue;
+    if(maxx>=r.x&&minx<=r.r&&maxy>=r.y&&miny<=r.b)return true;}
+  return false;}
 const NS='http://www.w3.org/2000/svg';
 function draw(){
   svg.innerHTML='';canvas.querySelectorAll('.elabel').forEach(n=>n.remove());
@@ -65,13 +94,22 @@ function draw(){
      orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#9aa7b8"/></marker>`;
   svg.appendChild(defs);
   const labs=[];
+  const boxes=[...canvas.querySelectorAll('.node')].map(n=>box(n.id)).filter(Boolean);
   EDGES.forEach(e=>{
     const a=box(e.from),b=box(e.to);if(!a||!b)return;
-    const [p1,p2,dir]=anchors(a,b);const bend=e.bend||0;let d,mx,my;
+    const [p1,p2,dir]=anchors(a,b,boxes);const bend=e.bend||0;let d,mx,my;
     if(dir==='h'){mx=(p1.x+p2.x)/2;my=(p1.y+p2.y)/2+bend;
       d=`M${p1.x},${p1.y} C${mx},${p1.y+bend} ${mx},${p2.y+bend} ${p2.x},${p2.y}`;}
-    else{mx=(p1.x+p2.x)/2+bend;my=(p1.y+p2.y)/2;
+    else if(dir==='v'){mx=(p1.x+p2.x)/2+bend;my=(p1.y+p2.y)/2;
       d=`M${p1.x},${p1.y} C${p1.x+bend},${my} ${p2.x+bend},${my} ${p2.x},${p2.y}`;}
+    else if(dir==='dh'){ // 斜对角·主方向横向：水平出 → 中点 → 垂直 → 水平入
+      mx=Math.min(Math.max((p1.x+p2.x)/2+bend,Math.min(p1.x,p2.x)),Math.max(p1.x,p2.x));
+      my=(p1.y+p2.y)/2;
+      d=`M${p1.x},${p1.y} L${mx},${p1.y} L${mx},${p2.y} L${p2.x},${p2.y}`;}
+    else{ // 'dv' 斜对角·主方向纵向：垂直出 → 中点 → 水平 → 垂直入
+      my=Math.min(Math.max((p1.y+p2.y)/2+bend,Math.min(p1.y,p2.y)),Math.max(p1.y,p2.y));
+      mx=(p1.x+p2.x)/2;
+      d=`M${p1.x},${p1.y} L${p1.x},${my} L${p2.x},${my} L${p2.x},${p2.y}`;}
     const path=document.createElementNS(NS,'path');path.setAttribute('d',d);
     path.setAttribute('fill','none');path.setAttribute('stroke','#9aa7b8');path.setAttribute('stroke-width','1.4');
     if(e.dashed)path.setAttribute('stroke-dasharray','4 4');
