@@ -1,0 +1,25 @@
+# CI 流水线：一次构建只有一个状态，失败可以重跑
+title: CI 流水线 · 状态流转
+subtitle: 一次构建只有一个状态
+gap: 96,112
+
+entry 触发构建 @1,1
+key   pending  @2,1 | 排队等 runner
+key   running  @3,1 | 正在执行
+end   passed   @4,1 | 全部绿灯
+warn  failed   @4,3 | 有步骤失败
+warn  cancelled @2,3 | 手动取消
+
+group 执行中: pending, running
+
+触发构建 -> pending: push 事件
+pending -> running: 分配 runner
+running -> passed: 全部绿灯
+running -> failed: 步骤报错 ~-40
+pending -> cancelled: 手动取消 ~-40
+failed -> running: 重跑 ~40
+
+legend 触发: entry
+legend 进行中: key
+legend 终止: end
+legend 失败: warn

@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+
+# 工具缓存
+.pytest_cache/
+.ruff_cache/
+
+# 编辑器
+.idea/
+.vscode/
+
+# 注意：examples/*.png 是验收产物，随仓库一起提交，不要忽略 png
